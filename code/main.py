@@ -1,80 +1,105 @@
 import random
-import math
 
+# Activation function: ReLU
 def relu(x):
     return max(0, x)
 
-def network_forward_pass(network, inputs):
-    layer_outputs = inputs
-    for layer in network:
-        weights, bias = layer['weights'], layer['bias']
-        next_layer_outputs = []
-        for w, b in zip(weights, bias):
-            next_layer_outputs.append(relu(sum(i * wi for i, wi in zip(layer_outputs, w)) + b))
-        layer_outputs = next_layer_outputs
-    return layer_outputs
+# Matrix multiplication
+def matmul(A, B):
+    result = []
+    for i in range(len(A)):
+        row = []
+        for j in range(len(B[0])):
+            sum = 0
+            for k in range(len(B)):
+                sum += A[i][k] * B[k][j]
+            row.append(sum)
+        result.append(row)
+    return result
 
-def simulated_annealing(network, input_size, temperature=1.0, cooling_rate=0.99, num_iterations=1000):
-    current_solution = [random.uniform(-10, 10) for _ in range(input_size)]
-    current_energy = sum(network_forward_pass(network, current_solution))
+# Addition of two vectors
+def add_vectors(a, b):
+    return [x + y for x, y in zip(a, b)]
 
-    best_solution = current_solution
-    best_energy = current_energy
+# Apply activation function element-wise
+def apply_activation(func, matrix):
+    return [[func(x) for x in row] for row in matrix]
 
-    for _ in range(num_iterations):
-        new_solution = [i + random.uniform(-1, 1) for i in current_solution]
-        new_energy = sum(network_forward_pass(network, new_solution))
+# Forward pass through the neural network
+def forward_pass(network, input_data):
+    layer_input = input_data
+    for layer in network['Layers']:
+        weights = layer['weights']
+        biases = layer['biases'][0]  # Adjusting this line to access the first row of biases matrix
+        layer_input = matmul([layer_input], weights)[0]
+        layer_input = add_vectors(layer_input, biases)
+        if layer['relu']:
+            layer_input = apply_activation(relu, [layer_input])[0]  # Adjusting this line to treat layer_input as a matrix
+    return layer_input
 
-        if new_energy < best_energy:
-            best_solution, best_energy = new_solution, new_energy
-
-        if new_energy < current_energy or random.uniform(0, 1) < math.exp((current_energy - new_energy) / temperature):
-            current_solution, current_energy = new_solution, new_energy
-
-        temperature *= cooling_rate
-
-    return best_solution
-
-def parse_networks(file_name):
+# Parse networks from file
+def parse_networks(filename):
     networks = []
-    network = {}
-    layer = None
-    with open(file_name, 'r') as file:
-        for line in file:
-            line = line.strip()
-            if not line:
-                continue
-            key, value = line.split(':')
-            key, value = key.strip(), value.strip()
+    current_network = None
+    current_layer = None
+    
+    with open(filename, 'r') as f:
+        for line in f:
+            parts = line.strip().split(':')
+            key = parts[0].strip()
+            value = ':'.join(parts[1:]).strip()
+            
             if key == 'Layers':
-                if network:
-                    networks.append(network)
-                    network = {}
-            elif key.startswith('Rows') or key.startswith('Cols') or key.startswith('Relu'):
-                layer_key = key.split(' ')[0] + 's'
-                layer_index = int(key.split(' ')[1]) - 1
-                if layer_key not in network:
-                    network[layer_key] = {}
-                network[layer_key][layer_index] = eval(value)
+                if current_network is not None:
+                    networks.append(current_network)
+                current_network = {'Layers': []}
+            elif key.startswith('Rows') or key.startswith('Cols'):
+                pass  # We can infer Rows and Cols from Weights matrix
             elif key.startswith('Weights') or key.startswith('Biases'):
-                layer_key = key.split(' ')[0] + 's'
-                layer_index = int(key.split(' ')[1]) - 1
-                if layer_key not in network:
-                    network[layer_key] = {}
-                network[layer_key][layer_index] = eval(value)
-            elif key == 'Example_Input' or key == 'Example_Output':
-                network[key] = eval(value)
+                matrix = eval(value)
+                current_layer[key.lower()] = matrix
+            elif key == 'Relu':
+                current_layer['relu'] = value.lower() == 'true'
+            elif key.startswith('Example_Input') or key.startswith('Example_Output'):
+                pass  # These are not used for network definition
             else:
-                network[key] = eval(value)
-    if network:
-        networks.append(network)
+                current_layer = {}
+                current_network['Layers'].append(current_layer)
+                
+        networks.append(current_network)  # Add the last network
     return networks
 
-if __name__ == "__main__":
+# Function to calculate the sum of absolute values
+def sum_of_abs(values):
+    return sum(abs(x) for x in values)
+
+# Optimization function to minimize the output of the neural network
+def optimize(network, num_iterations=10000, learning_rate=0.01):
+    input_size = len(network['Layers'][0]['weights'][0])  # Adjusting this line to access the first row of weights matrix
+    best_input = [random.uniform(-1, 1) for _ in range(input_size)]
+    best_output = forward_pass(network, best_input)
+    best_score = sum_of_abs(best_output)
+    
+    for _ in range(num_iterations):
+        candidate_input = [x + random.uniform(-learning_rate, learning_rate) for x in best_input]
+        candidate_output = forward_pass(network, candidate_input)
+        candidate_score = sum_of_abs(candidate_output)
+        if candidate_score < best_score:
+            best_input, best_output, best_score = candidate_input, candidate_output, candidate_score
+    
+    return best_input
+
+# Main function to execute the program
+def main():
     networks = parse_networks('networks.txt')
-    print(networks)
-    with open('solutions.txt', 'w') as file:
-        for network in networks:
-            input_size = len(network[0]['weights'][0])  # Assuming all layers have the same number of inputs
-            minimizing_input = simulated_annealing(network, input_size)
-            file.write(','.join(map(str, minimizing_input)) + '\n')
+    for i, network in enumerate(networks, 1):
+        print(f'Optimizing Network {i}')
+        optimized_input = optimize(network)
+        print('Optimized Input:', optimized_input)
+        optimized_output = forward_pass(network, optimized_input)
+        print('Network Output:', optimized_output)
+        print('Sum of Absolute Values:', sum_of_abs(optimized_output))
+        print('=' * 30)
+
+if __name__ == "__main__":
+    main()
