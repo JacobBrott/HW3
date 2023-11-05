@@ -66,25 +66,20 @@ def optimize(network, num_iterations=1000, learning_rate=0.01):
 # Parse networks from file
 def parse_networks(filename):
     networks = []
-    current_network = None
-
     with open(filename, 'r') as f:
-        for line in f:
-            parts = line.strip().split(':')
-            if parts[0].startswith('Layers'):
-                current_network = {'Layers': []}
-                networks.append(current_network)
-            elif parts[0].startswith('Weights'):
-                current_layer = {'weights': eval(parts[1].strip())}
-                current_network['Layers'].append(current_layer)
-            elif parts[0].startswith('Biases'):
-                biases = eval(parts[1].strip())
-                if isinstance(biases[0], list):
-                    biases = [b[0] for b in biases]  # Flatten the list if it's a list of lists
-                current_layer['biases'] = biases
-            elif parts[0].startswith('Relu'):
-                current_layer['relu'] = parts[1].strip().lower() == 'true'
-
+        network_data = f.read().strip().split('\n\n')
+        for net in network_data:
+            lines = net.split('\n')
+            layer_count = int(lines[0].split(':')[1].strip())
+            layers = []
+            idx = 1
+            for _ in range(layer_count):
+                weights = eval(lines[idx+2].split(':')[1].strip())
+                biases = eval(lines[idx+3].split(':')[1].strip())
+                relu_activation = lines[idx+4].split(':')[1].strip().lower() == 'true'
+                layers.append({'weights': weights, 'biases': [b[0] for b in biases], 'relu': relu_activation})
+                idx += 5
+            networks.append({'Layers': layers})
     return networks
 
 # Main function
@@ -92,12 +87,9 @@ def main():
     networks = parse_networks('networks.txt')
     with open('solutions.txt', 'w') as f_out:
         for i, network in enumerate(networks):
-            try:
-                input_data = optimize(network)  # Optimize the network
-                input_string = ','.join(map(str, input_data))
-                f_out.write(f"Network {i + 1}: {input_string}\n")
-            except ValueError as e:
-                print(f"Network {i + 1} encountered an error: {e}")
+            input_data = optimize(network)  # Optimize the network
+            input_string = ','.join(map(str, input_data))
+            f_out.write(f"{input_string}\n")
 
 if __name__ == "__main__":
     main()
